@@ -1,0 +1,72 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "d3fb4310-592e-443c-96a1-58694e7c391d",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "form_submissions": {
+      "name": "form_submissions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "form_name": {
+          "name": "form_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "form_name_idx": {
+          "name": "form_name_idx",
+          "columns": [
+            "form_name"
+          ],
+          "isUnique": false
+        },
+        "created_at_idx": {
+          "name": "created_at_idx",
+          "columns": [
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
