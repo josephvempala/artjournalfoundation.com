@@ -1,12 +1,26 @@
+
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import TurnstileWidget from "../../../../components/Turnstile";
+import Script from "next/script";
+import { useRouter } from "next/navigation";
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 const RangPage = () => {
+  const router = useRouter();
   const [paymentMethod, setPaymentMethod] = useState("dom");
   const [grade, setGrade] = useState("");
   const [category, setCategory] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const handleGradeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedGrade = e.target.value;
@@ -21,17 +35,104 @@ const RangPage = () => {
     else setCategory("");
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    if (!turnstileToken) {
+      alert("Please complete the captcha verification");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const formData = new FormData(formRef.current!);
+    const data: any = Object.fromEntries(formData.entries());
+
+    // Determine amount and currency based on payment method
+    let amount = 150;
+    let currency = "INR";
+    if (paymentMethod === "int1") {
+      amount = 15;
+      currency = "AED";
+    } else if (paymentMethod === "int2") {
+      amount = 10;
+      currency = "USD";
+    }
+
+    try {
+      // 1. Call API to create order
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          competition: "Rang",
+          ...data,
+          amount,
+          currency,
+          turnstileToken,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        keyId: string;
+        amount: number;
+        currency: string;
+        orderId: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(result.error || "Registration failed");
+      }
+
+      // 2. Open Razorpay Checkout
+      const options = {
+        key: result.keyId,
+        amount: result.amount,
+        currency: result.currency,
+        name: "Art Journal Foundation",
+        description: "Rang Competition 2025 Registration",
+        order_id: result.orderId,
+        handler: function (response: any) {
+          // Redirect to thank you page on success
+          router.push(
+            `/competitions/art-competition-2025/thank-you?payment_id=${response.razorpay_payment_id}`
+          );
+        },
+        prefill: {
+          name: data.studentName,
+          email: data.email,
+          contact: data.contact,
+        },
+        theme: {
+          color: "#50678c",
+        },
+      };
+
+      const rzp1 = new window.Razorpay(options);
+      rzp1.open();
+    } catch (error: any) {
+      console.error("Payment Error:", error);
+      alert(error.message || "An error occurred during registration");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <>
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
       {/* Page Header Start */}
-      <section className="page-header" style={{
-            backgroundImage:
-              "url(/assets/images/backgrounds/Rang-Banner-1.png)",
-            backgroundSize: "cover"
-          }}>
+      <section className="page-header">
         <div
           className="page-header-bg"
-          
+          style={{
+            backgroundImage:
+              "url(/assets/images/backgrounds/Rang-Banner-1.png)",
+          }}
         ></div>
         <div className="page-header-bubble">
           <img src="/assets/images/shapes/page-header-bubble.png" alt="" />
@@ -66,9 +167,9 @@ const RangPage = () => {
               </h2>
               <br />
               <p>
-                Rang is an annual Art competition organised by Art Journal
-                Foundation that aims at fostering creative aptitude and
-                enthusiasm amongst young scholars.
+                Rang is Annual Art Online Competition organized by Art Journal
+                Foundation that aims at enhancing creativity and motivation
+                skills amongst school students.
               </p>
               <p>
                 Art Journal Foundation is a creative platform by Elevating Arts
@@ -115,15 +216,14 @@ const RangPage = () => {
                 <li>D: Grades 9, 10, 11 and 12</li>
               </ul>
             </div>
-          </div>
-          <div className="row mt-3">
-            <div className="col-xl-12 col-lg-12">
+            <div className="col-xl-6 col-lg-6">
               <h2 style={{ color: "orange" }}>Prizes:</h2>
               <hr />
               <p>- Two winners from each category will be awarded trophies.</p>
               <p>- All winners and participants will get eCertificates.</p>
             </div>
           </div>
+
           <div className="row mt-3">
             <div className="col-xl-12 col-lg-12">
               <h2 style={{ color: "orange" }}>
@@ -131,29 +231,26 @@ const RangPage = () => {
               </h2>
               <hr />
               <p>
-                - We live in a world that seems more connected than ever,
-                through phones, social media, and technology. Yet, many people
-                feel more alone, unheard, or unseen.
+                We live in a world that seems more connected than ever, through
+                phones, social media, and technology. Yet, many people feel more
+                alone, unheard, or unseen.
               </p>
-              <p>- This theme invites you to explore this contrast.</p>
+              <p>This theme invites you to explore this contrast.</p>
               <p>
-                - Think about what it means to be connected, yet feel
+                Think about what it means to be connected, yet feel
                 disconnected. Is it about people ignoring each other in real
                 life? Is it about being lost in screens? Or is it about finding
                 new ways to truly connect?
               </p>
               <p>
-                -{" "}
                 <strong>
-                  Create a meaningful piece of art that expresses your thoughts
-                  on this idea.
+                  Create an artwork that shows this feeling of disconnection or
+                  the search for true connection in today’s connected world.
                 </strong>
-                Let your artwork reflect your interpretation while you
-                experiment with different artistic techniques, styles, and
-                mediums.
               </p>
             </div>
           </div>
+
           <div className="row mt-3">
             <div className="col-xl-12 col-lg-12">
               <h2 style={{ color: "orange" }}>Registration Fees:</h2>
@@ -174,12 +271,20 @@ const RangPage = () => {
                   Rang.
                 </li>
                 <li>
-                  2. The artwork may be created using any medium and in any size
-                  (Digital artwork not accepted - Check ‘Drishya’ category).
+                  2. Each participant will create an artwork on an A3 size paper
+                  (29.7 x 42.0cm).
                 </li>
                 <li>
-                  3. Students must follow the given theme and create original
-                  artwork.
+                  3. The participant may choose any medium for the artwork
+                  (Water colour, oil colour, pencil shading, crayons, etc.).
+                </li>
+                <li>
+                  4. The artwork must be original and created solely by the
+                  participant.
+                </li>
+                <li>
+                  5. Participants will be required to send a clear picture of
+                  their artwork.
                 </li>
               </ul>
             </div>
@@ -192,19 +297,19 @@ const RangPage = () => {
               <ul>
                 <li>
                   {" "}
-                  1. Submit a good resolution picture of the artwork as a JPEG/
-                  JPG/ PNG file (300 DPI).
+                  1. The image of the artwork should be clear and well-lit.
                 </li>
                 <li>
                   {" "}
-                  2. Maximum file size – 5MB, to be uploaded on the submission
-                  link, that will be received on your registered mail ID.{" "}
+                  2. Submissions to the competition to be uploaded on the
+                  submission link, that will be received on your registered mail
+                  ID, as an image in JPEG or PNG format, maximum size 5 MB.
                 </li>
                 <li>
                   {" "}
-                  3. Label your artwork and name the image file with your name
-                  and category for clear identification.
-                  <br /> For example: Nameofthestudent_CategoryName_Rang.jpeg{" "}
+                  3. When submitting please label your image file with your
+                  name, category for clear identification, for example:
+                  Nameofthestudent_CategoryName_Rang.jpeg
                 </li>
               </ul>
             </div>
@@ -216,32 +321,25 @@ const RangPage = () => {
               <hr />
               <p>The artwork will be judged based on the following criteria:</p>
               <br />
-
               <p>
-                1. <strong>Interpretation of the Theme:</strong> How well does
-                the artwork capture the essence of "Disconnected in a Connected
-                World"? Does it present a unique and meaningful perspective on
-                the theme?
+                1. <strong>Creativity and Originality</strong> - Uniqueness of
+                the idea and interpretation of the theme.
               </p>
               <p>
-                2. <strong>Artistic Skill and Technique:</strong> Does the
-                artwork demonstrate a strong command of artistic elements,
-                skills and techniques.{" "}
+                2. <strong>Technique and Skill</strong> - Mastery of the chosen
+                medium and artistic execution.
               </p>
               <p>
-                3. <strong>Creativity and Originality:</strong>Does the artwork
-                showcase innovative thinking and a fresh approach to the theme?
-                Is it visually striking and unique?
+                3. <strong>Relevance to Theme</strong> - How well the artwork
+                communicates the theme "Disconnected in a Connected World".
               </p>
               <p>
-                4. <strong>Conceptual Depth:</strong>How effectively does the
-                artwork convey a deeper meaning or message about the theme? Does
-                it provoke thought and inspire discussion?
+                4. <strong>Composition and Design</strong> - Arrangement of
+                visual elements and overall aesthetic appeal.
               </p>
               <p>
-                5. <strong>Visual Impact:</strong>Does the artwork have a strong
-                visual presence? Does it engage the viewer and create an
-                emotional response?
+                5. <strong>Overall Impact</strong> - The emotional or visual
+                impact of the artwork on the viewer.
               </p>
             </div>
           </div>
@@ -270,7 +368,7 @@ const RangPage = () => {
           <div className="row mt-5">
             <div className="col-xl-12 col-lg-12">
               <div className="event-art-form">
-                <form name="myForm">
+                <form ref={formRef} onSubmit={handleSubmit}>
                   <h2 style={{ color: "orange" }} className="subtitle-event">
                     Registration Details
                   </h2>
@@ -283,7 +381,7 @@ const RangPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="student_name"
+                        name="studentName"
                         id="student_name"
                         required
                       />
@@ -296,7 +394,7 @@ const RangPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="school_name"
+                        name="schoolName"
                         id="school_name"
                         required
                       />
@@ -311,7 +409,7 @@ const RangPage = () => {
                       <input
                         type="email"
                         className="form-control"
-                        name="student_email"
+                        name="email"
                         id="student_email"
                         required
                       />
@@ -325,7 +423,7 @@ const RangPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="student_contact"
+                        name="contact"
                         id="student_contact"
                         required
                         defaultValue="+91 "
@@ -393,7 +491,7 @@ const RangPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="instagram_handle"
+                        name="instagramHandle"
                         id="instagram_handle"
                       />
                     </div>
@@ -409,7 +507,7 @@ const RangPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="dom"
                             required
                             checked={paymentMethod === "dom"}
@@ -422,7 +520,7 @@ const RangPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="int1"
                             required
                             checked={paymentMethod === "int1"}
@@ -435,7 +533,7 @@ const RangPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="int2"
                             required
                             checked={paymentMethod === "int2"}
@@ -451,36 +549,42 @@ const RangPage = () => {
 
                   <div className="row mt-3">
                     <div className="col-xl-12">
+                      <div className="mb-3">
+                        <TurnstileWidget
+                          onSuccess={setTurnstileToken}
+                        />
+                      </div>
+                      
                       {paymentMethod === "dom" && (
                         <div className="dom box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-primary btn-lg domestic"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay INR 150
+                            {isSubmitting ? "Processing..." : "Pay INR 150"}
                           </button>
                         </div>
                       )}
                       {paymentMethod === "int1" && (
                         <div className="int1 box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-secondary btn-lg international1"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay AED 15
+                             {isSubmitting ? "Processing..." : "Pay AED 15"}
                           </button>
                         </div>
                       )}
                       {paymentMethod === "int2" && (
                         <div className="int2 box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-warning btn-lg international2"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay USD 10
+                             {isSubmitting ? "Processing..." : "Pay USD 10"}
                           </button>
                         </div>
                       )}

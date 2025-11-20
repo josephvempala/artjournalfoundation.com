@@ -1,12 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useRef } from "react";
+import TurnstileWidget from "../../../../components/Turnstile";
+import Script from "next/script";
+import { useRouter } from "next/navigation";
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 const NrityaPage = () => {
+  const router = useRouter();
   const [paymentMethod, setPaymentMethod] = useState("dom");
   const [grade, setGrade] = useState("");
   const [category, setCategory] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const handleGradeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedGrade = e.target.value;
@@ -21,17 +34,105 @@ const NrityaPage = () => {
     else setCategory("");
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    if (!turnstileToken) {
+      alert("Please complete the captcha verification");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const formData = new FormData(formRef.current!);
+    const data: any = Object.fromEntries(formData.entries());
+
+    // Determine amount and currency based on payment method
+    let amount = 150;
+    let currency = "INR";
+    if (paymentMethod === "int1") {
+      amount = 15;
+      currency = "AED";
+    } else if (paymentMethod === "int2") {
+      amount = 10;
+      currency = "USD";
+    }
+
+    try {
+      // 1. Call API to create order
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          competition: "Nritya",
+          ...data,
+          amount,
+          currency,
+          turnstileToken,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        keyId: string;
+        amount: number;
+        currency: string;
+        orderId: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(result.error || "Registration failed");
+      }
+
+      // 2. Open Razorpay Checkout
+      const options = {
+        key: result.keyId,
+        amount: result.amount,
+        currency: result.currency,
+        name: "Art Journal Foundation",
+        description: "Nritya Competition 2025 Registration",
+        order_id: result.orderId,
+        handler: function (response: any) {
+          // Redirect to thank you page on success
+          router.push(
+            `/competitions/art-competition-2025/thank-you?payment_id=${response.razorpay_payment_id}`
+          );
+        },
+        prefill: {
+          name: data.studentName,
+          email: data.email,
+          contact: data.contact,
+        },
+        theme: {
+          color: "#50678c",
+        },
+      };
+
+      const rzp1 = new window.Razorpay(options);
+      rzp1.open();
+    } catch (error: any) {
+      console.error("Payment Error:", error);
+      alert(error.message || "An error occurred during registration");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <>
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
       {/* Page Header Start */}
-      <section className="page-header"           style={{
+      <section className="page-header">
+        <div
+          className="page-header-bg"
+          style={{
             backgroundImage:
               "url(/assets/images/backgrounds/Nritya-Banner-1.png)",
                backgroundSize: "cover"
-          }}>
-        <div
-          className="page-header-bg"
-
+          }}
         ></div>
         <div className="page-header-bubble">
           <img src="/assets/images/shapes/page-header-bubble.png" alt="" />
@@ -47,9 +148,9 @@ const NrityaPage = () => {
               <li>
                 <span>/</span>
               </li>
-              <li style={{ color: "white" }}>The AJF Online Arts Competition 2025</li>
+              <li style={{ color: "black" }}>The AJF Online Arts Competition 2025</li>
             </ul>
-            <h2 style={{ color: "white" }}>Nritya Competition</h2>
+            <h2 style={{ color: "black" }}>Nritya Competition</h2>
           </div>
         </div>
       </section>
@@ -66,9 +167,9 @@ const NrityaPage = () => {
               </h2>
               <br />
               <p>
-                Nritya is an annual Dance competition organised by Art Journal
-                Foundation that aims at fostering creative aptitude and
-                enthusiasm amongst young scholars.
+                Nritya is Annual Dance Online Competition organized by Art Journal
+                Foundation that aims at enhancing creativity and motivation
+                skills amongst school students.
               </p>
               <p>
                 Art Journal Foundation is a creative platform by Elevating Arts
@@ -101,7 +202,7 @@ const NrityaPage = () => {
           </div>
           <br />
           <h2 style={{ color: "orange", textAlign: "center" }}>
-            Art Journal Foundation brings to you Nritya 2025
+            Art Journal Foundation Brings to you Nritya 2025
           </h2>
           <br />
           <div className="row mt-3">
@@ -115,15 +216,14 @@ const NrityaPage = () => {
                 <li>D: Grades 9, 10, 11 and 12</li>
               </ul>
             </div>
-          </div>
-          <div className="row mt-3">
-            <div className="col-xl-12 col-lg-12">
+            <div className="col-xl-6 col-lg-6">
               <h2 style={{ color: "orange" }}>Prizes:</h2>
               <hr />
               <p>- Two winners from each category will be awarded trophies.</p>
               <p>- All winners and participants will get eCertificates.</p>
             </div>
           </div>
+
           <div className="row mt-3">
             <div className="col-xl-12 col-lg-12">
               <h2 style={{ color: "orange" }}>
@@ -144,15 +244,13 @@ const NrityaPage = () => {
               </p>
               <p>
                 <strong>
-                  The participants are required to choreograph and create a solo
-                  dance performance on the theme ‘Disconnected in a Connected
-                  World’ that expresses this emotional contrast. Use movement,
-                  rhythm, and expression to show how we search for real
-                  connection in a world full of virtual links.
+                  Create a dance performance that shows this feeling of disconnection or
+                  the search for true connection in today’s connected world.
                 </strong>
               </p>
             </div>
           </div>
+
           <div className="row mt-3">
             <div className="col-xl-12 col-lg-12">
               <h2 style={{ color: "orange" }}>Registration Fees:</h2>
@@ -173,24 +271,15 @@ const NrityaPage = () => {
                   Nritya.
                 </li>
                 <li>
-                  2. Participants can use one genre or a combination of genres
-                  appropriate to address the theme. No special points given
-                  based on the number of genres used as the objective should be
-                  to address the theme effectively.
+                  2. The participant may choose any dance form (Classical, Folk, Western, etc.).
                 </li>
                 <li>
-                  3. Participants will be required to send a maximum 4 minutes
-                  duration dance video on the selected theme to the song of
-                  their choice.
-                </li>
-                <li>4. Video must be shot in horizontal orientation.</li>
-                <li>
-                  5. Participants must keep the use of props and costumes at the
-                  minimum range.
+                  3. The performance must be original and performed solely by the
+                  participant.
                 </li>
                 <li>
-                  6. Participants must follow the given theme and must send only
-                  a self- choreographed performance.
+                  4. Participants will be required to send a clear video of
+                  their performance (Max 3 mins).
                 </li>
               </ul>
             </div>
@@ -203,20 +292,19 @@ const NrityaPage = () => {
               <ul>
                 <li>
                   {" "}
-                  1. Submissions to the competition to be uploaded on the
+                  1. The video of the performance should be clear and well-lit.
+                </li>
+                <li>
+                  {" "}
+                  2. Submissions to the competition to be uploaded on the
                   submission link, that will be received on your registered mail
-                  ID, as a video in an MP4 format, maximum size 100 MB..
+                  ID, as a video file (MP4), maximum size 50 MB.
                 </li>
                 <li>
                   {" "}
-                  2. Participants are responsible for including their music with
-                  their video submission.
-                </li>
-                <li>
-                  {" "}
-                  3. When submitting, please label your video file with your
-                  name, category for clear identification, for example <br />{" "}
-                  Nameofthestudent_CategoryName_Nritya.mp4{" "}
+                  3. When submitting please label your video file with your
+                  name, category for clear identification, for example:
+                  Nameofthestudent_CategoryName_Nritya.mp4
                 </li>
               </ul>
             </div>
@@ -226,30 +314,22 @@ const NrityaPage = () => {
             <div className="col-xl-12 col-lg-12">
               <h2 style={{ color: "orange" }}>Criteria for Judgement:</h2>
               <hr />
+              <p>The performance will be judged based on the following criteria:</p>
+              <br />
               <p>
-                The following elements of artistic expression will be judged for
-                the dance performance submitted:
-              </p>
-              <hr />
-              <p>
-                1. <strong>Performance</strong> - Overall performance and
-                depicted theme’s creativity and uniqueness.
+                1. <strong>Choreography and Creativity</strong> - Originality of steps and interpretation of the theme.
               </p>
               <p>
-                2. <strong>Technique </strong>– The clarity of dance technique
-                used and optimum usage of space.
+                2. <strong>Technique and Skill</strong> - Execution of dance moves and rhythm.
               </p>
               <p>
-                3. <strong>Originality </strong>–The performance’s originality
-                and creativity.
+                3. <strong>Expression and Performance</strong> - Ability to convey emotions and connect with the audience.
               </p>
               <p>
-                4. <strong>Musicality</strong> – Connection of the music to the
-                dance theme. Overall rhythm/ timing in the movement.
+                4. <strong>Relevance to Theme</strong> - How well the performance communicates the theme.
               </p>
               <p>
-                5. <strong>Showmanship </strong>– Appeal/ excitement created by
-                the performance as a work of Art.
+                5. <strong>Overall Impact</strong> - The overall impression of the performance.
               </p>
             </div>
           </div>
@@ -278,7 +358,7 @@ const NrityaPage = () => {
           <div className="row mt-5">
             <div className="col-xl-12 col-lg-12">
               <div className="event-art-form">
-                <form name="myForm">
+                <form ref={formRef} onSubmit={handleSubmit}>
                   <h2 style={{ color: "orange" }} className="subtitle-event">
                     Registration Details
                   </h2>
@@ -291,7 +371,7 @@ const NrityaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="student_name"
+                        name="studentName"
                         id="student_name"
                         required
                       />
@@ -304,7 +384,7 @@ const NrityaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="school_name"
+                        name="schoolName"
                         id="school_name"
                         required
                       />
@@ -319,7 +399,7 @@ const NrityaPage = () => {
                       <input
                         type="email"
                         className="form-control"
-                        name="student_email"
+                        name="email"
                         id="student_email"
                         required
                       />
@@ -333,7 +413,7 @@ const NrityaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="student_contact"
+                        name="contact"
                         id="student_contact"
                         required
                         defaultValue="+91 "
@@ -401,7 +481,7 @@ const NrityaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="instagram_handle"
+                        name="instagramHandle"
                         id="instagram_handle"
                       />
                     </div>
@@ -417,7 +497,7 @@ const NrityaPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="dom"
                             required
                             checked={paymentMethod === "dom"}
@@ -430,7 +510,7 @@ const NrityaPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="int1"
                             required
                             checked={paymentMethod === "int1"}
@@ -443,7 +523,7 @@ const NrityaPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="int2"
                             required
                             checked={paymentMethod === "int2"}
@@ -459,36 +539,42 @@ const NrityaPage = () => {
 
                   <div className="row mt-3">
                     <div className="col-xl-12">
+                      <div className="mb-3">
+                        <TurnstileWidget
+                          onSuccess={setTurnstileToken}
+                        />
+                      </div>
+                      
                       {paymentMethod === "dom" && (
                         <div className="dom box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-primary btn-lg domestic"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay INR 150
+                            {isSubmitting ? "Processing..." : "Pay INR 150"}
                           </button>
                         </div>
                       )}
                       {paymentMethod === "int1" && (
                         <div className="int1 box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-secondary btn-lg international1"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay AED 15
+                             {isSubmitting ? "Processing..." : "Pay AED 15"}
                           </button>
                         </div>
                       )}
                       {paymentMethod === "int2" && (
                         <div className="int2 box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-warning btn-lg international2"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay USD 10
+                             {isSubmitting ? "Processing..." : "Pay USD 10"}
                           </button>
                         </div>
                       )}

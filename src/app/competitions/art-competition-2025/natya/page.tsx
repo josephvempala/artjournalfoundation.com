@@ -1,12 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useRef } from "react";
+import TurnstileWidget from "../../../../components/Turnstile";
+import Script from "next/script";
+import { useRouter } from "next/navigation";
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 const NatyaPage = () => {
+  const router = useRouter();
   const [paymentMethod, setPaymentMethod] = useState("dom");
   const [grade, setGrade] = useState("");
   const [category, setCategory] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const handleGradeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedGrade = e.target.value;
@@ -21,16 +34,104 @@ const NatyaPage = () => {
     else setCategory("");
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    if (!turnstileToken) {
+      alert("Please complete the captcha verification");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const formData = new FormData(formRef.current!);
+    const data: any = Object.fromEntries(formData.entries());
+
+    // Determine amount and currency based on payment method
+    let amount = 150;
+    let currency = "INR";
+    if (paymentMethod === "int1") {
+      amount = 15;
+      currency = "AED";
+    } else if (paymentMethod === "int2") {
+      amount = 10;
+      currency = "USD";
+    }
+
+    try {
+      // 1. Call API to create order
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          competition: "Natya",
+          ...data,
+          amount,
+          currency,
+          turnstileToken,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        keyId: string;
+        amount: number;
+        currency: string;
+        orderId: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(result.error || "Registration failed");
+      }
+
+      // 2. Open Razorpay Checkout
+      const options = {
+        key: result.keyId,
+        amount: result.amount,
+        currency: result.currency,
+        name: "Art Journal Foundation",
+        description: "Natya Competition 2025 Registration",
+        order_id: result.orderId,
+        handler: function (response: any) {
+          // Redirect to thank you page on success
+          router.push(
+            `/competitions/art-competition-2025/thank-you?payment_id=${response.razorpay_payment_id}`
+          );
+        },
+        prefill: {
+          name: data.studentName,
+          email: data.email,
+          contact: data.contact,
+        },
+        theme: {
+          color: "#50678c",
+        },
+      };
+
+      const rzp1 = new window.Razorpay(options);
+      rzp1.open();
+    } catch (error: any) {
+      console.error("Payment Error:", error);
+      alert(error.message || "An error occurred during registration");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <>
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
       {/* Page Header Start */}
-      <section className="page-header" style={{
-            backgroundImage:
-              "url(/assets/images/backgrounds/Natya-Banner-1.png)",
-               backgroundSize: "cover"
-          }}>
+      <section className="page-header">
         <div
           className="page-header-bg"
+          style={{
+            backgroundImage:
+              "url(/assets/images/backgrounds/Natya-Banner-1.png)",
+          }}
         ></div>
         <div className="page-header-bubble">
           <img src="/assets/images/shapes/page-header-bubble.png" alt="" />
@@ -65,9 +166,9 @@ const NatyaPage = () => {
               </h2>
               <br />
               <p>
-                Natya is an annual Theatre competition organised by Art Journal
-                Foundation that aims at fostering creative aptitude and
-                enthusiasm amongst young scholars.
+                Natya is Annual Theatre Online Competition organized by Art Journal
+                Foundation that aims at enhancing creativity and motivation
+                skills amongst school students.
               </p>
               <p>
                 Art Journal Foundation is a creative platform by Elevating Arts
@@ -114,9 +215,7 @@ const NatyaPage = () => {
                 <li>D: Grades 9, 10, 11 and 12</li>
               </ul>
             </div>
-          </div>
-          <div className="row mt-3">
-            <div className="col-xl-12 col-lg-12">
+            <div className="col-xl-6 col-lg-6">
               <h2 style={{ color: "orange" }}>Prizes:</h2>
               <hr />
               <p>- Two winners from each category will be awarded trophies.</p>
@@ -151,9 +250,8 @@ const NatyaPage = () => {
               </p>
               <p>
                 <strong>
-                  The participants are required to craft a solo performance that
-                  explores the feeling of being disconnected in a connected
-                  world.
+                  Create a monologue or a short scene that shows this feeling of disconnection or
+                  the search for true connection in today’s connected world.
                 </strong>
               </p>
             </div>
@@ -161,25 +259,16 @@ const NatyaPage = () => {
 
           <div className="row mt-3">
             <div className="col-xl-12 col-lg-12">
-              <h2 style={{ color: "orange" }}>
-                Performance Categories to choose from:
-              </h2>
+              <h2 style={{ color: "orange" }}>Performance Categories:</h2>
               <hr />
-              <p>
-                - <strong>Monologues: </strong>Participants can create a
-                character who feels disconnected despite being surrounded by
-                connections.
-              </p>
-              <p>
-                - <strong>Role Play: </strong>Participants can enact short
-                scenes or interactions involving characters (imaginary) who
-                experience emotional distance in a digitally connected world.
-              </p>
-              <p>
-                - <strong>Storytelling:</strong>Participants can tell original
-                short stories that revolve around the theme of feeling
-                disconnected in a connected world.
-              </p>
+              <ul>
+                <li>
+                  <strong>Monologue:</strong> A solo performance where you speak as a character.
+                </li>
+                <li>
+                  <strong>Short Scene:</strong> A scene with up to 2 characters (you can play both or have a partner).
+                </li>
+              </ul>
             </div>
           </div>
 
@@ -203,25 +292,15 @@ const NatyaPage = () => {
                   Natya.
                 </li>
                 <li>
-                  2. Each participant will perform a solo act based on the
-                  theme.
+                  2. The performance must be original and performed primarily by the
+                  participant.
                 </li>
                 <li>
-                  3. The performance must be a monologue, it may involve
-                  interactions with imaginary characters or objects
+                  3. Participants will be required to send a clear video of
+                  their performance (Max 3 mins).
                 </li>
                 <li>
-                  4. Participants are encouraged to use creative elements, such
-                  as costumes, props, lighting, and sound effects, to enhance
-                  their performance.
-                </li>
-                <li>
-                  5. Participants will be required to send a maximum 5 minutes
-                  duration performance video that must be shot in horizontal
-                  orientation.
-                </li>
-                <li>
-                  6. Performances can be in any language, but non-English
+                  4. Performances can be in any language, but non-English
                   performances should provide English Subtitles or a brief
                   translation.
                 </li>
@@ -236,23 +315,17 @@ const NatyaPage = () => {
               <ul>
                 <li>
                   {" "}
-                  1. The recording should be clear, well-lit, and free from
-                  technical glitches.
+                  1. The video of the performance should be clear and well-lit.
                 </li>
                 <li>
                   {" "}
                   2. Submissions to the competition to be uploaded on the
                   submission link, that will be received on your registered mail
-                  ID, as a video in an MP4 format, maximum size 150 MB.{" "}
+                  ID, as a video file (MP4), maximum size 50 MB.
                 </li>
                 <li>
                   {" "}
-                  3. Participants are responsible for including their music (if
-                  any) with their video submission
-                </li>
-                <li>
-                  {" "}
-                  4. When submitting, please label your video file with your
+                  3. When submitting please label your video file with your
                   name, category for clear identification, for example:
                   Nameofthestudent_CategoryName_Natya.mp4
                 </li>
@@ -264,33 +337,19 @@ const NatyaPage = () => {
             <div className="col-xl-12 col-lg-12">
               <h2 style={{ color: "orange" }}>Criteria for Judgement:</h2>
               <hr />
-              <p>
-                The performances will be judged based on the following criteria:
-              </p>{" "}
+              <p>The performance will be judged based on the following criteria:</p>
               <br />
               <p>
-                1. <strong>Emotion Portrayal: </strong>The depth and
-                authenticity of emotions expressed, the actor’s ability to evoke
-                a genuine emotional response from the audience.
+                1. <strong>Acting and Expression</strong> - Ability to portray the character and emotions.
               </p>
               <p>
-                2. <strong>Artistic Expression: </strong>Creativity,
-                originality, and use of theatrical elements to enhance the
-                performance, including costume, props, and set (if applicable).
+                2. <strong>Script and Content</strong> - Originality and relevance of the script to the theme.
               </p>
               <p>
-                3. <strong>Clarity and Diction: </strong>Clear enunciation and
-                projection of voice, ensuring the audience can understand the
-                emotions conveyed.
+                3. <strong>Voice and Diction</strong> - Clarity of speech and modulation.
               </p>
               <p>
-                4. <strong>Overall Impact:</strong> The overall impact and
-                effectiveness of the performance in engaging and connecting with
-                the audience.
-              </p>
-              <p>
-                5. <strong>Interpretation of the element's theme:</strong>{" "}
-                Creativity and originality in the performance.
+                4. <strong>Overall Impact</strong> - The overall impression of the performance.
               </p>
             </div>
           </div>
@@ -319,7 +378,7 @@ const NatyaPage = () => {
           <div className="row mt-5">
             <div className="col-xl-12 col-lg-12">
               <div className="event-art-form">
-                <form name="myForm">
+                <form ref={formRef} onSubmit={handleSubmit}>
                   <h2 style={{ color: "orange" }} className="subtitle-event">
                     Registration Details
                   </h2>
@@ -332,7 +391,7 @@ const NatyaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="student_name"
+                        name="studentName"
                         id="student_name"
                         required
                       />
@@ -345,7 +404,7 @@ const NatyaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="school_name"
+                        name="schoolName"
                         id="school_name"
                         required
                       />
@@ -360,7 +419,7 @@ const NatyaPage = () => {
                       <input
                         type="email"
                         className="form-control"
-                        name="student_email"
+                        name="email"
                         id="student_email"
                         required
                       />
@@ -374,7 +433,7 @@ const NatyaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="student_contact"
+                        name="contact"
                         id="student_contact"
                         required
                         defaultValue="+91 "
@@ -442,7 +501,7 @@ const NatyaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="instagram_handle"
+                        name="instagramHandle"
                         id="instagram_handle"
                       />
                     </div>
@@ -458,7 +517,7 @@ const NatyaPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="dom"
                             required
                             checked={paymentMethod === "dom"}
@@ -471,7 +530,7 @@ const NatyaPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="int1"
                             required
                             checked={paymentMethod === "int1"}
@@ -484,7 +543,7 @@ const NatyaPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="int2"
                             required
                             checked={paymentMethod === "int2"}
@@ -500,36 +559,42 @@ const NatyaPage = () => {
 
                   <div className="row mt-3">
                     <div className="col-xl-12">
+                      <div className="mb-3">
+                        <TurnstileWidget
+                          onSuccess={setTurnstileToken}
+                        />
+                      </div>
+                      
                       {paymentMethod === "dom" && (
                         <div className="dom box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-primary btn-lg domestic"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay INR 150
+                            {isSubmitting ? "Processing..." : "Pay INR 150"}
                           </button>
                         </div>
                       )}
                       {paymentMethod === "int1" && (
                         <div className="int1 box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-secondary btn-lg international1"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay AED 15
+                             {isSubmitting ? "Processing..." : "Pay AED 15"}
                           </button>
                         </div>
                       )}
                       {paymentMethod === "int2" && (
                         <div className="int2 box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-warning btn-lg international2"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay USD 10
+                             {isSubmitting ? "Processing..." : "Pay USD 10"}
                           </button>
                         </div>
                       )}

@@ -1,12 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { Turnstile } from "@marsidev/react-turnstile";
+import Script from "next/script";
+import { useRouter } from "next/navigation";
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 const SargamPage = () => {
+  const router = useRouter();
   const [paymentMethod, setPaymentMethod] = useState("dom");
   const [grade, setGrade] = useState("");
   const [category, setCategory] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const handleGradeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedGrade = e.target.value;
@@ -21,16 +34,105 @@ const SargamPage = () => {
     else setCategory("");
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    if (!turnstileToken) {
+      alert("Please complete the captcha verification");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const formData = new FormData(formRef.current!);
+    const data: any = Object.fromEntries(formData.entries());
+
+    // Determine amount and currency based on payment method
+    let amount = 150;
+    let currency = "INR";
+    if (paymentMethod === "int1") {
+      amount = 15;
+      currency = "AED";
+    } else if (paymentMethod === "int2") {
+      amount = 10;
+      currency = "USD";
+    }
+
+    try {
+      // 1. Call API to create order
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          competition: "Sargam",
+          ...data,
+          amount,
+          currency,
+          turnstileToken,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        keyId: string;
+        amount: number;
+        currency: string;
+        orderId: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(result.error || "Registration failed");
+      }
+
+      // 2. Open Razorpay Checkout
+      const options = {
+        key: result.keyId,
+        amount: result.amount,
+        currency: result.currency,
+        name: "Art Journal Foundation",
+        description: "Sargam Competition 2025 Registration",
+        order_id: result.orderId,
+        handler: function (response: any) {
+          // Redirect to thank you page on success
+          router.push(
+            `/competitions/art-competition-2025/thank-you?payment_id=${response.razorpay_payment_id}`
+          );
+        },
+        prefill: {
+          name: data.studentName,
+          email: data.email,
+          contact: data.contact,
+        },
+        theme: {
+          color: "#50678c",
+        },
+      };
+
+      const rzp1 = new window.Razorpay(options);
+      rzp1.open();
+    } catch (error: any) {
+      console.error("Payment Error:", error);
+      alert(error.message || "An error occurred during registration");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <>
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
       {/* Page Header Start */}
-      <section className="page-header"  style={{
+      <section className="page-header">
+        <div
+          className="page-header-bg"
+          style={{
             backgroundImage:
               "url(/assets/images/backgrounds/Sargam-Banner-1.png)",
                backgroundSize: "cover"
-          }}>
-        <div
-          className="page-header-bg"
+          }}
         ></div>
         <div className="page-header-bubble">
           <img src="/assets/images/shapes/page-header-bubble.png" alt="" />
@@ -65,9 +167,9 @@ const SargamPage = () => {
               </h2>
               <br />
               <p>
-                Sargam is a singing competition organised by Art Journal
-                Foundation that aims at fostering creative aptitude and
-                enthusiasm amongst young students.
+                Sargam is Annual Singing Online Competition organized by Art Journal
+                Foundation that aims at enhancing creativity and motivation
+                skills amongst school students.
               </p>
               <p>
                 Art Journal Foundation is a creative platform by Elevating Arts
@@ -151,9 +253,8 @@ const SargamPage = () => {
               </p>
               <p>
                 <strong>
-                  Weave your ideas into a song that expresses the feeling of
-                  disconnection or the search for true connection in today’s
-                  connected world.
+                  Create a song or musical piece that shows this feeling of disconnection or
+                  the search for true connection in today’s connected world.
                 </strong>
               </p>
             </div>
@@ -179,33 +280,15 @@ const SargamPage = () => {
                   Sargam.
                 </li>
                 <li>
-                  2. Each participant will sing a solo song of any genre,
-                  depicting the feeling of being disconnected in a connected
-                  world, or the search for real connection.
+                  2. The participant may choose any genre (Classical, Folk, Western, etc.).
                 </li>
                 <li>
-                  3. The participant may choose any song that depicts the theme
-                  or even compose an original piece. The submission piece may be
-                  a combination of songs.
+                  3. The performance must be original and performed solely by the
+                  participant.
                 </li>
                 <li>
-                  4. The chosen song can be the participant's original
-                  composition or cover. In case of a cover, the song must be
-                  sung in the participant's own style.
-                </li>
-                <li>
-                  5. Participants may play any instrument along with the
-                  singing; however video editing of any sort is not allowed.
-                </li>
-                <li>
-                  6. Participants will be required to send a minimum 3 minutes
-                  and maximum 5 minutes duration singing video that must be shot
-                  in horizontal orientation.
-                </li>
-                <li>
-                  7. The chosen song can be in any language, however if it is
-                  other than Hindi or English, the participant should provide
-                  English Subtitles.
+                  4. Participants will be required to send a clear video of
+                  their performance (Max 3 mins).
                 </li>
               </ul>
             </div>
@@ -218,23 +301,17 @@ const SargamPage = () => {
               <ul>
                 <li>
                   {" "}
-                  1. The video recording should be clear and free from technical
-                  glitches.
+                  1. The video of the performance should be clear and well-lit.
                 </li>
                 <li>
                   {" "}
                   2. Submissions to the competition to be uploaded on the
                   submission link, that will be received on your registered mail
-                  ID, as a video in an MP4 format, maximum size 100 MB.
+                  ID, as a video file (MP4), maximum size 50 MB.
                 </li>
                 <li>
                   {" "}
-                  3. Participants are responsible for including their music (if
-                  any) with their video submission.
-                </li>
-                <li>
-                  {" "}
-                  4. When submitting please label your video file with your
+                  3. When submitting please label your video file with your
                   name, category for clear identification, for example:
                   Nameofthestudent_CategoryName_Sargam.mp4
                 </li>
@@ -246,33 +323,22 @@ const SargamPage = () => {
             <div className="col-xl-12 col-lg-12">
               <h2 style={{ color: "orange" }}>Criteria for Judgement:</h2>
               <hr />
-              <p>
-                The performances will be judged based on the following criteria:
-              </p>
+              <p>The performance will be judged based on the following criteria:</p>
               <br />
               <p>
-                1. <strong>Vocal Ability</strong> - The technical aspects of the
-                participant's singing, including pitch accuracy, tone quality,
-                range, breath control, vibrato, and overall vocal control.
+                1. <strong>Vocals and Pitch</strong> - Accuracy of notes and vocal quality.
               </p>
               <p>
-                2. <strong>Expression and Emotion</strong> - The depth and
-                ability to convey emotions connected to the song's lyrics and
-                melody.
+                2. <strong>Rhythm and Tempo</strong> - Adherence to the beat and timing.
               </p>
               <p>
-                3. <strong>Integration and interpretation</strong> - The choice
-                of song (self-composed or otherwise) that shows a student's
-                interpretation and understanding of the theme.
+                3. <strong>Expression and Feel</strong> - Ability to convey emotions through the song.
               </p>
               <p>
-                4. <strong>Diction and Clarity</strong> - Articulation of lyrics
-                ensuring clear communication of the song's message.
+                4. <strong>Relevance to Theme</strong> - How well the song communicates the theme.
               </p>
               <p>
-                5. <strong> Impact</strong> - The overall impact and
-                effectiveness of the performance in engaging and connecting with
-                the audience.
+                5. <strong>Overall Impact</strong> - The overall impression of the performance.
               </p>
             </div>
           </div>
@@ -301,7 +367,7 @@ const SargamPage = () => {
           <div className="row mt-5">
             <div className="col-xl-12 col-lg-12">
               <div className="event-art-form">
-                <form name="myForm">
+                <form ref={formRef} onSubmit={handleSubmit}>
                   <h2 style={{ color: "orange" }} className="subtitle-event">
                     Registration Details
                   </h2>
@@ -314,7 +380,7 @@ const SargamPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="student_name"
+                        name="studentName"
                         id="student_name"
                         required
                       />
@@ -327,7 +393,7 @@ const SargamPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="school_name"
+                        name="schoolName"
                         id="school_name"
                         required
                       />
@@ -342,7 +408,7 @@ const SargamPage = () => {
                       <input
                         type="email"
                         className="form-control"
-                        name="student_email"
+                        name="email"
                         id="student_email"
                         required
                       />
@@ -356,7 +422,7 @@ const SargamPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="student_contact"
+                        name="contact"
                         id="student_contact"
                         required
                         defaultValue="+91 "
@@ -424,7 +490,7 @@ const SargamPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="instagram_handle"
+                        name="instagramHandle"
                         id="instagram_handle"
                       />
                     </div>
@@ -440,7 +506,7 @@ const SargamPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="dom"
                             required
                             checked={paymentMethod === "dom"}
@@ -453,7 +519,7 @@ const SargamPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="int1"
                             required
                             checked={paymentMethod === "int1"}
@@ -466,7 +532,7 @@ const SargamPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="int2"
                             required
                             checked={paymentMethod === "int2"}
@@ -482,36 +548,43 @@ const SargamPage = () => {
 
                   <div className="row mt-3">
                     <div className="col-xl-12">
+                      <div className="mb-3">
+                        <Turnstile
+                          siteKey="0x4AAAAAAA8x4-6_5-6_5-6_" // Replace with your actual site key
+                          onSuccess={setTurnstileToken}
+                        />
+                      </div>
+                      
                       {paymentMethod === "dom" && (
                         <div className="dom box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-primary btn-lg domestic"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay INR 150
+                            {isSubmitting ? "Processing..." : "Pay INR 150"}
                           </button>
                         </div>
                       )}
                       {paymentMethod === "int1" && (
                         <div className="int1 box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-secondary btn-lg international1"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay AED 15
+                             {isSubmitting ? "Processing..." : "Pay AED 15"}
                           </button>
                         </div>
                       )}
                       {paymentMethod === "int2" && (
                         <div className="int2 box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-warning btn-lg international2"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay USD 10
+                             {isSubmitting ? "Processing..." : "Pay USD 10"}
                           </button>
                         </div>
                       )}

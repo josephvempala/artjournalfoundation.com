@@ -1,12 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useRef } from "react";
+import TurnstileWidget from "../../../../components/Turnstile";
+import Script from "next/script";
+import { useRouter } from "next/navigation";
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 const DrishyaPage = () => {
+  const router = useRouter();
   const [paymentMethod, setPaymentMethod] = useState("dom");
   const [grade, setGrade] = useState("");
   const [category, setCategory] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const handleGradeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedGrade = e.target.value;
@@ -19,17 +32,105 @@ const DrishyaPage = () => {
     else setCategory("");
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    if (!turnstileToken) {
+      alert("Please complete the captcha verification");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const formData = new FormData(formRef.current!);
+    const data: any = Object.fromEntries(formData.entries());
+
+    // Determine amount and currency based on payment method
+    let amount = 150;
+    let currency = "INR";
+    if (paymentMethod === "int1") {
+      amount = 15;
+      currency = "AED";
+    } else if (paymentMethod === "int2") {
+      amount = 10;
+      currency = "USD";
+    }
+
+    try {
+      // 1. Call API to create order
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          competition: "Drishya",
+          ...data,
+          amount,
+          currency,
+          turnstileToken,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        keyId: string;
+        amount: number;
+        currency: string;
+        orderId: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(result.error || "Registration failed");
+      }
+
+      // 2. Open Razorpay Checkout
+      const options = {
+        key: result.keyId,
+        amount: result.amount,
+        currency: result.currency,
+        name: "Art Journal Foundation",
+        description: "Drishya Competition 2025 Registration",
+        order_id: result.orderId,
+        handler: function (response: any) {
+          // Redirect to thank you page on success
+          router.push(
+            `/competitions/art-competition-2025/thank-you?payment_id=${response.razorpay_payment_id}`
+          );
+        },
+        prefill: {
+          name: data.studentName,
+          email: data.email,
+          contact: data.contact,
+        },
+        theme: {
+          color: "#50678c",
+        },
+      };
+
+      const rzp1 = new window.Razorpay(options);
+      rzp1.open();
+    } catch (error: any) {
+      console.error("Payment Error:", error);
+      alert(error.message || "An error occurred during registration");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <>
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
       {/* Page Header Start */}
-      <section className="page-header" style={{
+      <section className="page-header">
+        <div
+          className="page-header-bg"
+          style={{
             backgroundImage:
               "url(/assets/images/backgrounds/Natya-Banner-1.png)",
              backgroundSize: "cover"
-          }}>
-        <div
-          className="page-header-bg"
-
+          }}
         ></div>
         <div className="page-header-bubble">
           <img src="/assets/images/shapes/page-header-bubble.png" alt="" />
@@ -112,9 +213,7 @@ const DrishyaPage = () => {
                 <li>D: Grades 9, 10, 11 and 12</li>
               </ul>
             </div>
-          </div>
-          <div className="row mt-3">
-            <div className="col-xl-12 col-lg-12">
+            <div className="col-xl-6 col-lg-6">
               <h2 style={{ color: "orange" }}>Prizes:</h2>
               <hr />
               <p>- Two winners from each category will be awarded trophies.</p>
@@ -281,7 +380,7 @@ const DrishyaPage = () => {
           <div className="row mt-5">
             <div className="col-xl-12 col-lg-12">
               <div className="event-art-form">
-                <form name="myForm">
+                <form ref={formRef} onSubmit={handleSubmit}>
                   <h2 style={{ color: "orange" }} className="subtitle-event">
                     Registration Details
                   </h2>
@@ -294,7 +393,7 @@ const DrishyaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="student_name"
+                        name="studentName"
                         id="student_name"
                         required
                       />
@@ -307,7 +406,7 @@ const DrishyaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="school_name"
+                        name="schoolName"
                         id="school_name"
                         required
                       />
@@ -322,7 +421,7 @@ const DrishyaPage = () => {
                       <input
                         type="email"
                         className="form-control"
-                        name="student_email"
+                        name="email"
                         id="student_email"
                         required
                       />
@@ -336,7 +435,7 @@ const DrishyaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="student_contact"
+                        name="contact"
                         id="student_contact"
                         required
                         defaultValue="+91 "
@@ -399,7 +498,7 @@ const DrishyaPage = () => {
                       <input
                         type="text"
                         className="form-control"
-                        name="instagram_handle"
+                        name="instagramHandle"
                         id="instagram_handle"
                       />
                     </div>
@@ -415,7 +514,7 @@ const DrishyaPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="dom"
                             required
                             checked={paymentMethod === "dom"}
@@ -428,7 +527,7 @@ const DrishyaPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="int1"
                             required
                             checked={paymentMethod === "int1"}
@@ -441,7 +540,7 @@ const DrishyaPage = () => {
                         <li>
                           <input
                             type="radio"
-                            name="payment"
+                            name="paymentMethod"
                             value="int2"
                             required
                             checked={paymentMethod === "int2"}
@@ -457,36 +556,42 @@ const DrishyaPage = () => {
 
                   <div className="row mt-3">
                     <div className="col-xl-12">
+                      <div className="mb-3">
+                        <TurnstileWidget
+                          onSuccess={setTurnstileToken}
+                        />
+                      </div>
+                      
                       {paymentMethod === "dom" && (
                         <div className="dom box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-primary btn-lg domestic"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay INR 150
+                            {isSubmitting ? "Processing..." : "Pay INR 150"}
                           </button>
                         </div>
                       )}
                       {paymentMethod === "int1" && (
                         <div className="int1 box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-secondary btn-lg international1"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay AED 15
+                             {isSubmitting ? "Processing..." : "Pay AED 15"}
                           </button>
                         </div>
                       )}
                       {paymentMethod === "int2" && (
                         <div className="int2 box">
                           <button
-                            type="button"
+                            type="submit"
                             className="w-100 btn btn-warning btn-lg international2"
-                            onClick={() => alert("Payment integration required")}
+                            disabled={isSubmitting}
                           >
-                            Pay USD 10
+                             {isSubmitting ? "Processing..." : "Pay USD 10"}
                           </button>
                         </div>
                       )}
