@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import TurnstileWidget from "../../../../components/Turnstile";
 import Script from "next/script";
 import { useRouter } from "next/navigation";

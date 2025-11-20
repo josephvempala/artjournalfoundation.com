@@ -6,7 +6,16 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 
 export async function POST(req: NextRequest) {
-  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  let ctx;
+  let db;
+  try {
+    ctx = await getCloudflareContext();
+    db = drizzle(ctx.env.DB as D1Database);
+  } catch (_) {
+      console.error("Could not get Cloudflare context");
+      return NextResponse.json({ error: "Database connection failed" }, { status: 500 });
+  }
+  const webhookSecret = ctx.env.RAZORPAY_WEBHOOK_SECRET;
 
   if (!webhookSecret) {
     console.error("RAZORPAY_WEBHOOK_SECRET is not set");
@@ -36,15 +45,6 @@ export async function POST(req: NextRequest) {
     const payment = event.payload.payment.entity;
     const orderId = payment.order_id;
     const paymentId = payment.id;
-
-    let db;
-    try {
-      const ctx = await getCloudflareContext();
-      db = drizzle(ctx.env.DB as D1Database);
-    } catch (e) {
-       console.error("Could not get Cloudflare context");
-       return NextResponse.json({ error: "Database connection failed" }, { status: 500 });
-    }
 
     try {
       await db

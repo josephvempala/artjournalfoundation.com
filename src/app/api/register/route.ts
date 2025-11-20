@@ -37,9 +37,28 @@ export async function POST(req: NextRequest) {
     turnstileToken,
   } = body;
 
+  let db;
+  let ctx;
+  try {
+    ctx = await getCloudflareContext();
+    db = drizzle(ctx.env.DB as D1Database);
+  } catch (_) {
+     // Fallback for local dev if getCloudflareContext fails or if running in nodejs_compat without it
+     console.warn("Could not get Cloudflare context, trying process.env for DB (might fail if not bound)");
+     // In local dev with `next dev`, we might not have the D1 binding easily accessible without the worker environment.
+     // However, for this task, we assume the environment is set up correctly or we are mocking.
+     // If DB is undefined, drizzle will fail.
+     if (process.env.DB) {
+         // This path is unlikely to work for D1 binding in Node environment directly without a proxy
+         // But let's leave it as a fallback attempt or error out.
+         console.error("DB binding found in process.env but it might be a string/object mismatch");
+     }
+     return NextResponse.json({ error: "Database connection failed" }, { status: 500 });
+  }
+
   // 1. Validate Turnstile Token
   const turnstileVerifyUrl = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
-  const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  const turnstileSecret = ctx.env.TURNSTILE_SECRET_KEY;
 
   if (!turnstileSecret) {
     console.error("TURNSTILE_SECRET_KEY is not set");
@@ -63,8 +82,8 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Create Razorpay Order
-  const razorpayKeyId = process.env.RAZORPAY_KEY_ID;
-  const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
+  const razorpayKeyId = ctx.env.RAZORPAY_KEY_ID;
+  const razorpayKeySecret = ctx.env.RAZORPAY_KEY_SECRET;
 
   if (!razorpayKeyId || !razorpayKeySecret) {
     console.error("RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is not set");
@@ -100,23 +119,6 @@ export async function POST(req: NextRequest) {
   const orderData = (await orderResponse.json()) as { id: string; amount: number; currency: string };
 
   // 3. Save to Database
-  let db;
-  try {
-    const ctx = await getCloudflareContext();
-    db = drizzle(ctx.env.DB as D1Database);
-  } catch (e) {
-     // Fallback for local dev if getCloudflareContext fails or if running in nodejs_compat without it
-     console.warn("Could not get Cloudflare context, trying process.env for DB (might fail if not bound)");
-     // In local dev with `next dev`, we might not have the D1 binding easily accessible without the worker environment.
-     // However, for this task, we assume the environment is set up correctly or we are mocking.
-     // If DB is undefined, drizzle will fail.
-     if (process.env.DB) {
-         // This path is unlikely to work for D1 binding in Node environment directly without a proxy
-         // But let's leave it as a fallback attempt or error out.
-         console.error("DB binding found in process.env but it might be a string/object mismatch");
-     }
-     return NextResponse.json({ error: "Database connection failed" }, { status: 500 });
-  }
 
   try {
     await db.insert(registrations).values({
