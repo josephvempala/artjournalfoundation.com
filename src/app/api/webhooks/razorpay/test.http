@@ -1,0 +1,25 @@
+POST https://test.jows.page/api/webhooks/razorpay
+
+Content-Type: application/json
+x-razorpay-signature: <signature>
+
+{
+    "event": "payment.captured",
+    "payload": {
+        "payment": {
+            "entity": {
+                "id": "pay_1234567890",
+                "order_id": "order_1234567890",
+                "amount": 100,
+                "currency": "INR",
+                "status": "captured",
+                "created_at": 1633072800,
+                "updated_at": 1633072800,
+                "notes": {
+                    "competition": "Art Competition 2022",
+                    "studentName": "John Doe"
+                }
+            }
+        }
+    }
+}
